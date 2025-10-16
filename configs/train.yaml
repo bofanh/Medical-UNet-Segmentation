@@ -1,0 +1,34 @@
+seed: 42
+project_name: medical-unet-seg
+
+paths:
+  dataset_root: /path/to/dataset
+  train_images: images/train
+  train_masks: masks/train
+  val_images: images/val
+  val_masks: masks/val
+  output_dir: outputs
+
+training:
+  epochs: 50
+  batch_size: 4
+  learning_rate: 0.001
+  weight_decay: 1e-5
+  num_workers: 4
+  amp: true
+
+model:
+  input_channels: 1
+  num_classes: 1
+  base_channels: 64
+
+scheduler:
+  type: ReduceLROnPlateau
+  factor: 0.5
+  patience: 5
+  threshold: 0.01
+  min_lr: 1e-6
+
+checkpoints:
+  save_best_only: true
+  keep_last: 3
