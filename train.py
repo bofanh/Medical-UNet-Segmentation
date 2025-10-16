@@ -13,7 +13,7 @@ from torch.utils.data import DataLoader
 from src.data.dataset import MedicalImageDataset, default_pair_transform
 from src.models.unet import UNet
 from src.utils.config import load_config
-from src.utils.training import evaluate, save_checkpoint, train_one_epoch
+from src.utils.training import evaluate, log_training_run, save_checkpoint, train_one_epoch
 
 
 def parse_args() -> argparse.Namespace:
@@ -129,12 +129,21 @@ def main() -> None:
     checkpoints_dir.mkdir(parents=True, exist_ok=True)
 
     best_dice = -float("inf")
+    best_val_loss = float("inf")
     keep_last = int(config.get("checkpoints", {}).get("keep_last", 3))
     save_best_only = bool(config.get("checkpoints", {}).get("save_best_only", True))
+    last_train_loss = None
+    last_train_dice = None
+    last_val_loss = None
+    last_val_dice = None
 
     for epoch in range(1, epochs + 1):
         train_loss, train_dice = train_one_epoch(model, train_loader, optimizer, device, scaler, amp=amp)
         val_loss, val_dice = evaluate(model, val_loader, device, amp=amp)
+        last_train_loss = train_loss
+        last_train_dice = train_dice
+        last_val_loss = val_loss
+        last_val_dice = val_dice
 
         if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
             scheduler.step(val_dice)
@@ -144,6 +153,8 @@ def main() -> None:
         is_best = val_dice > best_dice
         if is_best:
             best_dice = val_dice
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
 
         state = {
             "epoch": epoch,
@@ -163,6 +174,20 @@ def main() -> None:
         )
 
     print(f"Training complete. Best Dice: {best_dice:.4f}")
+    run_summary = {
+        "config_path": str(Path(args.config).resolve()),
+        "epochs": epochs,
+        "best_dice": float(best_dice) if best_dice != -float("inf") else None,
+        "best_val_loss": float(best_val_loss) if best_val_loss != float("inf") else None,
+        "final_train_loss": float(last_train_loss) if last_train_loss is not None else None,
+        "final_val_loss": float(last_val_loss) if last_val_loss is not None else None,
+        "final_train_dice": float(last_train_dice) if last_train_dice is not None else None,
+        "final_val_dice": float(last_val_dice) if last_val_dice is not None else None,
+        "seed": seed,
+        "config": config,
+    }
+    run_dir = log_training_run(Path(args.config), output_dir, run_summary)
+    print(f"Run metadata saved to {run_dir}")
 
 
 if __name__ == "__main__":

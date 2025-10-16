@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+import shutil
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Tuple
 
@@ -94,3 +97,43 @@ def evaluate(model: nn.Module, dataloader: DataLoader, device: torch.device, amp
 
     dataset_size = len(dataloader.dataset)
     return running_loss / dataset_size, running_dice / dataset_size
+
+
+def log_training_run(config_path: Path, output_dir: Path, run_summary: Dict[str, Any]) -> Path:
+    """Persist metadata for a training run so different config executions are tracked."""
+    logs_dir = output_dir / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
+    config_path = Path(config_path)
+    config_name = config_path.stem or "config"
+
+    run_dir = logs_dir / f"{config_name}_{timestamp}"
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    summary_path = run_dir / "summary.json"
+    with summary_path.open("w", encoding="utf-8") as fh:
+        json.dump(run_summary, fh, indent=2)
+
+    if config_path.exists():
+        shutil.copy2(config_path, run_dir / config_path.name)
+
+    csv_path = logs_dir / "runs.csv"
+    header = "timestamp,config,epochs,best_dice,best_val_loss\n"
+    best_dice = run_summary.get("best_dice")
+    best_val_loss = run_summary.get("best_val_loss")
+    line = ",".join(
+        [
+            timestamp,
+            config_name,
+            str(run_summary.get("epochs", "")),
+            f"{best_dice:.6f}" if isinstance(best_dice, (int, float)) else "",
+            f"{best_val_loss:.6f}" if isinstance(best_val_loss, (int, float)) else "",
+        ]
+    )
+    with csv_path.open("a", encoding="utf-8") as fh:
+        if csv_path.tell() == 0:
+            fh.write(header)
+        fh.write(line + "\n")
+
+    return run_dir
